@@ -1,0 +1,61 @@
+services:
+  headscale:
+    image: headscale/headscale:0.29.4
+    command: serve
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/docker-meta/vpn/headscale/config:/etc/headscale
+      - /home/ubuntu/docker-meta/vpn/headscale/data:/var/lib/headscale
+    ports:
+      - "127.0.0.1:1337:1337"     # nginx on the host proxies headscale.riskycase.in here
+      - "3478:3478/udp"
+
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    container_name: headplane
+    restart: unless-stopped
+    ports:
+      - '3337:3000'
+    volumes:
+      - '/home/ubuntu/docker-meta/vpn/headplane/config.yaml:/etc/headplane/config.yaml'
+      - '/home/ubuntu/docker-meta/vpn/headplane/storage:/var/lib/headplane'
+      - '/home/ubuntu/docker-meta/vpn/headscale/config/config.yaml:/etc/headscale/config.yaml'
+      - '/home/ubuntu/docker-meta/vpn/headscale/config/dns_records.json:/etc/headscale/dns_records.json'
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+    depends_on:
+      - headscale
+
+  tailscale-exit:
+    image: tailscale/tailscale:latest
+    hostname: vps-exit
+    restart: unless-stopped
+    depends_on:
+      - headscale
+    # Logged in once with a pre-auth key; the login lives in the state volume, so no key
+    # is kept here. To re-register, add TS_AUTHKEY from the environment for one deploy.
+    environment:
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      # The image's iptables is the legacy backend, which needs kernel modules the host
+      # doesn't load; tailscaled's router setup failed without this.
+      - TS_DEBUG_FIREWALL_MODE=nftables
+      # The public name, not the service name, so the exit node reaches every service on
+      # this host the way any client does. Needs the lo trust below and sslh-tproxy.
+      - TS_EXTRA_ARGS=--login-server=https://headscale.riskycase.in --advertise-exit-node
+    volumes:
+      - /home/ubuntu/docker-meta/vpn/tailscale/state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+
+networks:
+  default:
+    driver_opts:
+      # sslh connects to its backends as the client's address; for a client in this
+      # network the reply reaches sslh through lo, which Docker otherwise drops.
+      com.docker.network.bridge.trusted_host_interfaces: "lo"
