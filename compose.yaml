@@ -43,6 +43,13 @@ services:
       - TS_EXTRA_ARGS=--login-server=https://headscale.riskycase.in --advertise-exit-node
     volumes:
       - /home/ubuntu/docker-meta/vpn/tailscale/state:/var/lib/tailscale
+      # Exit-node clients' DNS is resolved here. Docker's embedded resolver forwards from
+      # the host's namespace to the host's (OVH's) resolvers, out of reach of the WARP
+      # routing, so this container talks to its nameservers directly instead.
+      - ./exit-node/resolv.conf:/etc/resolv.conf:ro
+    # Reaching Headscale must not need DNS, which only works while WARP is up.
+    extra_hosts:
+      - "headscale.riskycase.in:57.129.178.243"
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -77,8 +84,10 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
-      # WARP account and WireGuard profile, created on first start. Holds a private key.
+      # WARP account, WireGuard profile and pinned endpoint, created on first start. Holds
+      # a private key.
       - /home/ubuntu/docker-meta/vpn/warp:/state
+      - ./exit-node/resolv.conf:/etc/resolv.conf:ro
     healthcheck:
       test: ["CMD", "warp-egress", "health"]
       interval: 30s

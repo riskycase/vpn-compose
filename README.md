@@ -34,9 +34,17 @@ connections to the phone keep working.
 - Policy routing: priority 4999 keeps the main table's specific routes (the Docker network,
   the host) for forwarded traffic; priority 5000 sends the rest to table 51820, whose
   default route is `wg-warp`. Both are evaluated before Tailscale's own rules from 5210.
+- DNS: with an exit node selected, clients send their lookups to the exit node, and
+  tailscaled resolves them itself. Docker's embedded resolver would forward those from the
+  host's namespace to OVH's resolvers, so the exit node uses `exit-node/resolv.conf`
+  directly, and priority 5001 routes lookups to its nameservers through WARP as well.
 - Fails closed: table 51820 keeps an `unreachable` default, so if the tunnel goes away
-  forwarded traffic is dropped rather than leaving the VPS from its own address. The rules
-  outlive the sidecar; to send exit traffic out directly again:
+  forwarded traffic and DNS are dropped rather than leaving the VPS from its own address.
+  Neither the tunnel nor the exit node needs DNS to come back: the WARP endpoint is
+  resolved once and pinned in `wgcf-endpoint` (delete it if Cloudflare moves the
+  endpoint), and `extra_hosts` gives the exit node Headscale's address.
+- The rules and `wg-warp` live in the exit node's namespace and outlive the sidecar; a
+  stopped sidecar only stops repairing them. To send exit traffic out directly again:
 
   ```
   docker compose run --rm warp flush
@@ -61,7 +69,9 @@ Tests, without root or netlink:
 1. `docker compose ps` — `warp` healthy (it needs a handshake with Cloudflare in the last
    3 minutes).
 2. `docker compose exec warp sh -c 'ip rule; ip route show table 51820; wg show'`.
-3. With the phone on the exit node, `https://cloudflare.com/cdn-cgi/trace` shows
-   `warp=on`, and a DNS leak test shows no OVH resolvers.
-4. `docker compose stop warp`: the phone loses connectivity through the exit node rather
-   than falling back to the VPS address. `docker compose start warp` restores it.
+3. With the phone on the exit node and "Use Tailscale DNS" on,
+   `https://cloudflare.com/cdn-cgi/trace` shows `warp=on`, and an extended DNS leak test
+   shows only Cloudflare resolvers, none of OVH's.
+4. `docker compose exec tailscale-exit ip link del wg-warp`: the phone loses connectivity
+   and DNS through the exit node rather than falling back to the VPS address, and gets
+   both back within the reconcile interval (30s) without intervention.

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fake getent for tests/run.sh: resolves the WARP endpoint, counting lookups so the tests
+# can prove applying never needs DNS. FAKE_GETENT_FAIL makes the lookup fail.
+set -eu
+echo "GETENT $*" >> "${FAKE_STATE:?FAKE_STATE not set}.calls"
+[ -z "${FAKE_GETENT_FAIL:-}" ] || exit 2
+[ "$1 $2" = "ahostsv4 engage.cloudflareclient.com" ] || exit 2
+printf '162.159.192.1   STREAM engage.cloudflareclient.com\n162.159.192.1   DGRAM  engage.cloudflareclient.com\n'
