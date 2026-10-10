@@ -1,0 +1,20 @@
+#!/bin/sh
+# Fake nft for tests/run.sh: a ruleset loaded with -f - is applied as a whole, the way
+# nft applies a file in one transaction.
+set -eu
+STATE="${FAKE_STATE:?FAKE_STATE not set}"
+case "$*" in
+    "-f -")
+        ruleset=$(cat)
+        printf '%s\n' "$ruleset" | grep -q 'oifname "wg-warp" .*maxseg size set rt mtu' \
+            || { echo "nft: ruleset missing the clamp" >&2; exit 1; }
+        grep -vx "NFT table inet warp_egress" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        echo "NFT table inet warp_egress" >> "$STATE"
+        ;;
+    "list table inet warp_egress") grep -qx "NFT table inet warp_egress" "$STATE" ;;
+    "delete table inet warp_egress")
+        grep -qx "NFT table inet warp_egress" "$STATE" || exit 1
+        grep -vx "NFT table inet warp_egress" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        ;;
+    *) echo "nft: unhandled $*" >&2; exit 2 ;;
+esac

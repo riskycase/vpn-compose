@@ -1,0 +1,36 @@
+#!/bin/sh
+# Fake wgcf for tests/run.sh: counts API calls, and with FAKE_WGCF_FAIL set dies after
+# writing part of its output, like a container killed mid-registration.
+set -eu
+STATE="${FAKE_STATE:?FAKE_STATE not set}"
+[ "$1" = "--config" ] || exit 2
+config="$2"; shift 2
+# The real wgcf picks the account file's format from its extension.
+case $config in
+    *.toml) ;;
+    *) echo "Unsupported Config Type \"${config##*.}\"" >&2; exit 1 ;;
+esac
+echo "WGCF $1" >> "$STATE.calls"
+case "$1" in
+    register)
+        [ "${2:-}" = "--accept-tos" ] || { echo "ToS not accepted" >&2; exit 1; }
+        echo 'access_token = "partial' > "$config"
+        [ -z "${FAKE_WGCF_FAIL:-}" ] || exit 1
+        printf 'access_token = "tok"\nprivate_key = "cHJpdmF0ZQ=="\n' > "$config"
+        ;;
+    generate)
+        [ "$2" = "--profile" ] || exit 2
+        cat > "$3" <<PROFILE
+[Interface]
+PrivateKey = cHJpdmF0ZQ==
+Address = 172.16.0.2/32, 2606:4700:110:8a36::2/128
+DNS = 1.1.1.1, 1.0.0.1
+MTU = 1280
+[Peer]
+PublicKey = bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = engage.cloudflareclient.com:2408
+PROFILE
+        ;;
+    *) exit 2 ;;
+esac

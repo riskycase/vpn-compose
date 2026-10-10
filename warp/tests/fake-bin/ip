@@ -1,0 +1,76 @@
+#!/bin/sh
+# Fake iproute2 for tests/run.sh. Records links, addresses, routes and rules in $FAKE_STATE,
+# printing them back in the shapes the script's check mode greps for.
+set -eu
+STATE="${FAKE_STATE:?FAKE_STATE not set}"
+
+FAM=4
+case "${1:-}" in
+    -4) shift ;;
+    -6) FAM=6; shift ;;
+esac
+OBJ="$1"; ACTION="$2"; shift 2
+
+drop() { grep -vxF "$1" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"; }
+
+case "$OBJ $ACTION" in
+    "link show")
+        [ "$1" = "dev" ] && shift
+        line=$(grep "^LINK $1 " "$STATE" || :)
+        [ -n "$line" ] || { echo "Device \"$1\" does not exist." >&2; exit 1; }
+        case $line in *" up") echo "9: $1: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1280" ;;
+                      *) echo "9: $1: <POINTOPOINT,NOARP> mtu 1420" ;; esac
+        ;;
+    "link add")
+        [ "$1" = "dev" ] && shift
+        echo "LINK $1 down" >> "$STATE"
+        ;;
+    "link set")
+        [ "$1" = "dev" ] && shift
+        drop "LINK $1 down"; drop "LINK $1 up"
+        case " $* " in *" up "*) echo "LINK $1 up" >> "$STATE" ;; *) echo "LINK $1 down" >> "$STATE" ;; esac
+        ;;
+    "link del")
+        [ "$1" = "dev" ] && shift
+        drop "LINK $1 down"; drop "LINK $1 up"
+        grep -v "^ADDR [46] .* dev $1\$" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        grep -v "^ROUTE [46] .* dev $1 table" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        ;;
+    "addr replace")
+        drop "ADDR $FAM $*"; echo "ADDR $FAM $*" >> "$STATE"
+        ;;
+    "addr show")
+        [ "$1" = "dev" ] && shift
+        grep "^ADDR $FAM .* dev $1\$" "$STATE" | awk '{ print "    inet " $3 " scope global" }' || :
+        ;;
+    "route replace")
+        # Keyed on everything but the target, like the kernel's (type, dst, metric, table).
+        key=$(echo "$*" | sed 's/ dev [^ ]*//')
+        grep -v "^ROUTEKEY $FAM $key|" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        echo "ROUTEKEY $FAM $key|ROUTE $FAM $*" >> "$STATE"
+        ;;
+    "route show")
+        [ "$1" = "table" ] || exit 2
+        grep "^ROUTEKEY $FAM .* table $2|" "$STATE" | sed 's/^[^|]*|ROUTE [46] //; s/ table [^ ]*//' || :
+        ;;
+    "route flush")
+        [ "$1" = "table" ] || exit 2
+        grep -v "^ROUTEKEY $FAM .* table $2|" "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        ;;
+    "rule add")
+        prio=$(echo "$*" | sed -n 's/.*priority \([0-9]*\).*/\1/p')
+        sel=$(echo "$*" | sed 's/ priority [0-9]*//')
+        echo "RULE $FAM $prio $sel" >> "$STATE"
+        ;;
+    "rule show")
+        [ "$1" = "priority" ] || exit 2
+        grep "^RULE $FAM $2 " "$STATE" | sed "s/^RULE $FAM $2 /$2:\tfrom all /" || :
+        ;;
+    "rule del")
+        [ "$1" = "priority" ] || exit 2
+        first=$(grep -n "^RULE $FAM $2 " "$STATE" | head -n 1 | cut -d: -f1)
+        [ -n "$first" ] || { echo "RTNETLINK answers: No such file or directory" >&2; exit 2; }
+        sed "${first}d" "$STATE" > "$STATE.tmp"; mv "$STATE.tmp" "$STATE"
+        ;;
+    *) echo "ip: unhandled $OBJ $ACTION" >&2; exit 2 ;;
+esac

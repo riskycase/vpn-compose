@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fake wg for tests/run.sh: setconf records the peer and keeps the config it was given.
+set -eu
+STATE="${FAKE_STATE:?FAKE_STATE not set}"
+case "$1" in
+    setconf)
+        grep -q "^LINK $2 " "$STATE" || { echo "Unable to modify interface: No such device" >&2; exit 1; }
+        grep -v "^WGPEER $2 " "$STATE" > "$STATE.tmp" || :; mv "$STATE.tmp" "$STATE"
+        echo "WGPEER $2 $(sed -n 's/^PublicKey = //p' "$3")" >> "$STATE"
+        cp "$3" "$STATE.wgconf"
+        ;;
+    show)
+        case "$3" in
+            peers) sed -n "s/^WGPEER $2 //p" "$STATE" ;;
+            latest-handshakes) echo "$(sed -n "s/^WGPEER $2 //p" "$STATE")	${FAKE_HANDSHAKE:-0}" ;;
+        esac
+        ;;
+    *) exit 2 ;;
+esac
