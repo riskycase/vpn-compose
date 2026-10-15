@@ -3,6 +3,12 @@ services:
     image: headscale/headscale:0.29.4
     command: serve
     restart: unless-stopped
+    # How Headplane finds the container to signal when it changes DNS settings. Without
+    # it Headplane logs "Integration Docker is not available" and refuses to act on
+    # Headscale at all. Its default is this label rather than a container name, which
+    # Compose names unpredictably anyway.
+    labels:
+      me.tale.headplane.target: headscale
     volumes:
       - /home/ubuntu/docker-meta/vpn/headscale/config:/etc/headscale
       - /home/ubuntu/docker-meta/vpn/headscale/data:/var/lib/headscale
