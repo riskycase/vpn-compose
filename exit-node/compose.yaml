@@ -1,35 +1,13 @@
 services:
-  headscale:
-    image: headscale/headscale:0.29.4
-    command: serve
-    restart: unless-stopped
-    volumes:
-      - /home/ubuntu/docker-meta/vpn/headscale/config:/etc/headscale
-      - /home/ubuntu/docker-meta/vpn/headscale/data:/var/lib/headscale
-    ports:
-      - "127.0.0.1:1337:1337"     # nginx on the host proxies headscale.riskycase.in here
-
-  headplane:
-    image: ghcr.io/tale/headplane:latest
-    container_name: headplane
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:3337:3000'     # nginx on the host proxies Headplane here
-    volumes:
-      - '/home/ubuntu/docker-meta/vpn/headplane/config.yaml:/etc/headplane/config.yaml'
-      - '/home/ubuntu/docker-meta/vpn/headplane/storage:/var/lib/headplane'
-      - '/home/ubuntu/docker-meta/vpn/headscale/config/config.yaml:/etc/headscale/config.yaml'
-      - '/home/ubuntu/docker-meta/vpn/headscale/config/dns_records.json:/etc/headscale/dns_records.json'
-      - '/var/run/docker.sock:/var/run/docker.sock:ro'
-    depends_on:
-      - headscale
-
   tailscale-exit:
     image: tailscale/tailscale:latest
-    hostname: vps-exit
+    # The name this exit node announces to Headscale. Required, with no default on
+    # purpose: every host deploying this stack would otherwise register under the same
+    # name, and they'd all need renaming by hand in Headplane.
+    hostname: ${EXIT_NODE_HOSTNAME:?set EXIT_NODE_HOSTNAME to this host's exit node name}
     restart: unless-stopped
-    depends_on:
-      - headscale
+    # Headscale is a separate stack now, possibly on a different host entirely, so there's
+    # no same-file depends_on to wait on it. It just needs to already be up.
     # Logged in once with a pre-auth key; the login lives in the state volume, so no key
     # is kept here. To re-register, add TS_AUTHKEY from the environment for one deploy.
     environment:
@@ -42,11 +20,13 @@ services:
       # this host the way any client does. Needs the lo trust below and sslh-tproxy.
       - TS_EXTRA_ARGS=--login-server=https://headscale.riskycase.in --advertise-exit-node
     volumes:
-      - /home/ubuntu/docker-meta/vpn/tailscale/state:/var/lib/tailscale
+      # Relative to this directory, so a fresh host just needs this folder checked out —
+      # no coordination with the server stack's absolute paths.
+      - ./data/tailscale:/var/lib/tailscale
       # Exit-node clients' DNS is resolved here. Docker's embedded resolver forwards from
-      # the host's namespace to the host's (OVH's) resolvers, out of reach of the WARP
+      # the host's namespace to the host's own resolvers, out of reach of the WARP
       # routing, so this container talks to its nameservers directly instead.
-      - ./exit-node/resolv.conf:/etc/resolv.conf:ro
+      - ./resolv.conf:/etc/resolv.conf:ro
     # Reaching Headscale must not need DNS, which only works while WARP is up.
     extra_hosts:
       - "headscale.riskycase.in:57.129.178.243"
@@ -85,9 +65,9 @@ services:
       - no-new-privileges:true
     volumes:
       # WARP account, WireGuard profile and pinned endpoint, created on first start. Holds
-      # a private key.
-      - /home/ubuntu/docker-meta/vpn/warp:/state
-      - ./exit-node/resolv.conf:/etc/resolv.conf:ro
+      # a private key. Relative, same reasoning as tailscale-exit's state above.
+      - ./data/warp:/state
+      - ./resolv.conf:/etc/resolv.conf:ro
     healthcheck:
       test: ["CMD", "warp-egress", "health"]
       interval: 30s

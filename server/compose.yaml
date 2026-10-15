@@ -1,0 +1,25 @@
+services:
+  headscale:
+    image: headscale/headscale:0.29.4
+    command: serve
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/docker-meta/vpn/headscale/config:/etc/headscale
+      - /home/ubuntu/docker-meta/vpn/headscale/data:/var/lib/headscale
+    ports:
+      - "127.0.0.1:1337:1337"     # nginx on the host proxies headscale.riskycase.in here
+
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    container_name: headplane
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3337:3000'     # nginx on the host proxies Headplane here
+    volumes:
+      - '/home/ubuntu/docker-meta/vpn/headplane/config.yaml:/etc/headplane/config.yaml'
+      - '/home/ubuntu/docker-meta/vpn/headplane/storage:/var/lib/headplane'
+      - '/home/ubuntu/docker-meta/vpn/headscale/config/config.yaml:/etc/headscale/config.yaml'
+      - '/home/ubuntu/docker-meta/vpn/headscale/config/dns_records.json:/etc/headscale/dns_records.json'
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+    depends_on:
+      - headscale

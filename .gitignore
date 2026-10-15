@@ -1,0 +1,3 @@
+# Per-host state for the exit-node stack: Tailscale's login and the WARP account,
+# profile, and private key. Never commit this — it's host-specific and holds secrets.
+/exit-node/data/
