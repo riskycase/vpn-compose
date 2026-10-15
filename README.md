@@ -111,10 +111,28 @@ Tests, without root or netlink, from `exit-node/`:
 
 ## Migrating an existing combined deployment to the split layout
 
-A host that ran the old single-stack `compose.yaml` has its exit-node state sitting under
-the server's absolute path (`/home/ubuntu/docker-meta/vpn/tailscale/` and `.../warp/`), not
-`exit-node/data/`. Deploying the new `exit-node` stack there without moving that state
-first starts clean: a fresh Tailscale login prompt and a fresh WARP registration, throwing
-away a working device and account for no reason. Move the two directories into the new
-stack's `exit-node/data/tailscale/` and `exit-node/data/warp/` before the first deploy of
-the split stack on that host.
+A host that ran the old single-stack `compose.yaml` has its exit-node state under the
+server's absolute paths, not `exit-node/data/`. Deploying the new `exit-node` stack there
+without moving that state first starts clean: a fresh Tailscale login prompt and a fresh
+WARP registration, throwing away a working device and account for no reason.
+
+Note the old Tailscale mount was the `state` *subdirectory*
+(`.../vpn/tailscale/state:/var/lib/tailscale`), so its contents go directly into
+`data/tailscale/` — nesting a `state/` directory inside leaves tailscaled with an empty
+state directory and it registers again. Back up first, then, with `DATA` the new stack's
+`exit-node/data`:
+
+```
+sudo tar -czf ~/vpn-exit-node-state-$(date +%Y%m%d-%H%M%S).tar.gz \
+    -C /home/ubuntu/docker-meta/vpn tailscale warp
+sudo mkdir -p "$DATA/tailscale" "$DATA/warp"
+sudo cp -a /home/ubuntu/docker-meta/vpn/tailscale/state/. "$DATA/tailscale/"
+sudo cp -a /home/ubuntu/docker-meta/vpn/warp/. "$DATA/warp/"
+sudo chown root:root "$DATA/tailscale" "$DATA/warp"
+sudo chmod 700 "$DATA/tailscale"
+sudo chmod 755 "$DATA/warp"
+```
+
+`cp -a` matters: the WARP account and profile are mode 600 and must stay that way. Copy
+rather than move, so the old stack still has its state if the first split deploy needs
+backing out.
