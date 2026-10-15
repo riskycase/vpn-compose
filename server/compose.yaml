@@ -16,7 +16,14 @@ services:
       - "127.0.0.1:1337:1337"     # nginx on the host proxies headscale.riskycase.in here
 
   headplane:
-    image: ghcr.io/tale/headplane:latest
+    # Pinned off latest, and held at 0.7.1 deliberately. 0.8.0 bumped react-router to
+    # 8.4.0, whose action-origin guard compares the full origin rather than just the host.
+    # Behind a TLS-terminating proxy the socket here is plain HTTP, so Headplane builds
+    # http://host/... while the browser sends Origin: https://host, and every non-GET
+    # action returns Bad Request: saving ACLs, approving routes, even logging out. Loaders
+    # are unaffected, so pages still render, which makes it look like a permissions
+    # problem. Upstream: tale/headplane#657. Unpin once a 0.8.x carries the fix.
+    image: ghcr.io/tale/headplane:0.7.1
     container_name: headplane
     restart: unless-stopped
     ports:
