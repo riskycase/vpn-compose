@@ -11,6 +11,10 @@ services:
     # Logged in once with a pre-auth key; the login lives in the state volume, so no key
     # is kept here. To re-register, add TS_AUTHKEY from the environment for one deploy.
     environment:
+      # Passed through from the stack's environment, not set here. A first deploy on a new
+      # host needs a Headscale pre-auth key; later ones don't, and the bare form leaves it
+      # unset in the container rather than empty when the stack doesn't provide it.
+      - TS_AUTHKEY
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
       # The image's iptables is the legacy backend, which needs kernel modules the host
